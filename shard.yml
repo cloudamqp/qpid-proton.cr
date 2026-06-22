@@ -1,0 +1,9 @@
+name: qpid-proton
+version: 0.1.0
+
+authors:
+  - qpid-proton.cr contributors
+
+crystal: ">= 1.20.0"
+
+license: Apache-2.0
