@@ -42,8 +42,9 @@ module Qpid
     end
 
     class Client < Handle
-      DEFAULT_PORT    = 5672
-      DEFAULT_TIMEOUT = 10.seconds
+      DEFAULT_PORT                    = 5672
+      DEFAULT_TIMEOUT                 = 10.seconds
+      DEFAULT_SESSION_INCOMING_WINDOW = 1024_u32
 
       getter host : String
       getter port : Int32
@@ -282,16 +283,15 @@ module Qpid
         end
 
         connection = @connection || raise Error.new("Client is not connected")
-        session = connection.session.open
+        session = open_session(connection)
         link = session.sender(next_link_name("sender"))
         link.target.address = address
         link.open
 
-        @sessions << session
         sender = SenderState.new(address, session, link)
         @senders[address] = sender
 
-        unless pump_until(timeout) { link.remote_active? || @closed }
+        unless pump_until(timeout) { sender.remote_open? || link.remote_active? || @closed }
           raise Error.new("Timed out opening sender link for #{address}")
         end
         raise @last_error.not_nil! if @closed && @last_error
@@ -306,23 +306,30 @@ module Qpid
         end
 
         connection = @connection || raise Error.new("Client is not connected")
-        session = connection.session.open
+        session = open_session(connection)
         link = session.receiver(next_link_name("receiver"))
         link.source.address = address
         link.open
-        link.flow(credit)
 
-        @sessions << session
         receiver = ReceiverState.new(address, session, link, auto_accept)
         @receivers[address] = receiver
         @receiver_links[link.raw.address] = receiver
 
-        unless pump_until(timeout) { link.remote_active? || @closed }
+        unless pump_until(timeout) { receiver.remote_open? || link.remote_active? || @closed }
           raise Error.new("Timed out opening receiver link for #{address}")
         end
         raise @last_error.not_nil! if @closed && @last_error
 
+        link.flow(credit)
         receiver
+      end
+
+      private def open_session(connection : Connection) : Session
+        session = connection.session
+        session.set_incoming_window(DEFAULT_SESSION_INCOMING_WINDOW)
+        session.open
+        @sessions << session
+        session
       end
 
       private def shift_message(receiver : ReceiverState) : IncomingMessage?
@@ -434,8 +441,21 @@ module Qpid
         when Lib::EventType::TransportClosed
           @closed = true
           @connected = false
+        when Lib::EventType::LinkRemoteOpen
+          handle_link_remote_open(event)
         when Lib::EventType::Delivery
           handle_delivery(event)
+        end
+      end
+
+      private def handle_link_remote_open(event : Event) : Nil
+        link = event.link
+        return unless link
+
+        if sender = @senders.values.find { |state| state.link.raw == link.raw }
+          sender.remote_open = true
+        elsif receiver = @receiver_links[link.raw.address]?
+          receiver.remote_open = true
         end
       end
 
@@ -523,6 +543,7 @@ module Qpid
         getter address : String
         getter session : Session
         getter link : Link
+        property? remote_open = false
 
         def initialize(@address : String, @session : Session, @link : Link)
         end
@@ -533,6 +554,7 @@ module Qpid
         getter session : Session
         getter link : Link
         property auto_accept : Bool
+        property? remote_open = false
         getter messages = Deque(IncomingMessage).new
 
         def initialize(@address : String, @session : Session, @link : Link, @auto_accept : Bool)
