@@ -2,8 +2,11 @@
 
 Crystal bindings for the Apache Qpid Proton C library, plus a small blocking client for AMQP 1.0 publish/consume workflows.
 
-The shard links against `libqpid-proton` and expects Proton headers and libraries to be installed on the system.
-The high-level client uses Proton's `pn_connection_driver` over a Crystal `TCPSocket`.
+By default the shard builds and statically links a vendored Apache Qpid Proton C core from `vendor/qpid-proton`.
+The vendored build disables Proton TLS and Cyrus SASL (`SSL_IMPL=none`, `SASL_IMPL=none`) and is intended for the core connection-driver/client workflow.
+Compile with `-Dqpid_proton_system` to use the system `libqpid-proton` instead.
+
+The high-level client uses Proton's `pn_connection_driver` over a Crystal `IO`.
 
 ```crystal
 require "qpid-proton"
@@ -43,6 +46,35 @@ message = client.receive("queue-name")
 client.close
 ```
 
+To connect through an externally wrapped IO, pass `io_factory`. If the IO is already encrypted, set `externally_encrypted: true` so Proton can use SASL mechanisms such as `PLAIN` even though Proton's own transport does not see TLS:
+
+```crystal
+factory = ->(host : String, port : Int32, timeout : Time::Span) {
+  socket = TCPSocket.new(host, port, nil, timeout)
+  socket.as(IO)
+}
+
+client = Qpid::Proton::Client.new(
+  "localhost",
+  5672,
+  io_factory: factory,
+  externally_encrypted: true
+)
+```
+
+TLS support is optional and lives outside Proton:
+
+```crystal
+require "qpid-proton/tls"
+
+client = Qpid::Proton::Client.new(
+  "localhost",
+  5671,
+  io_factory: Qpid::Proton::TLS.io_factory,
+  externally_encrypted: true
+)
+```
+
 For manual delivery settlement:
 
 ```crystal
@@ -59,8 +91,11 @@ end
 ## Examples
 
 ```sh
+sh ./ext/qpid-proton/build.sh
 crystal run examples/publish.cr -- examples "hello"
 crystal run examples/consume.cr -- examples
 ```
 
 Set `AMQP_HOST`, `AMQP_PORT`, `AMQP_USERNAME`, `AMQP_PASSWORD`, and `AMQP_ALLOW_INSECURE_MECHS=1` as needed.
+
+If postinstall scripts are skipped, run `sh ./ext/qpid-proton/build.sh` before compiling, or compile with `-Dqpid_proton_system` to link against an installed Proton library.

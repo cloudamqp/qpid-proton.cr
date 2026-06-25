@@ -42,6 +42,8 @@ module Qpid
     end
 
     class Client < Handle
+      alias IOFactory = String, Int32, Time::Span -> IO
+
       DEFAULT_PORT                    = 5672
       DEFAULT_TIMEOUT                 = 10.seconds
       DEFAULT_SESSION_INCOMING_WINDOW = 1024_u32
@@ -53,27 +55,32 @@ module Qpid
       getter transport : Transport?
 
       @driver : ConnectionDriver?
-      @socket : TCPSocket?
+      @io : IO?
+      @io_factory : IOFactory?
       @username : String?
       @password : String?
       @virtual_host : String?
       @sasl_allowed_mechanisms : String?
       @allow_insecure_mechanisms : Bool
+      @externally_encrypted : Bool
       @last_error : Error?
 
       def initialize(@host = "localhost", @port = DEFAULT_PORT, username : String? = nil,
                      password : String? = nil, virtual_host : String? = nil,
                      container_id : String? = nil, sasl_allowed_mechanisms : String? = nil,
-                     allow_insecure_mechanisms = false)
+                     allow_insecure_mechanisms = false, io_factory = nil,
+                     externally_encrypted = false)
         @username = username
         @password = password
         @virtual_host = virtual_host
         @sasl_allowed_mechanisms = sasl_allowed_mechanisms
         @allow_insecure_mechanisms = allow_insecure_mechanisms
+        @io_factory = wrap_io_factory(io_factory)
+        @externally_encrypted = externally_encrypted
         @container_id = container_id || "qpid-proton-cr-#{Process.pid}-#{Time.utc.to_unix_ms}"
         driver = ConnectionDriver.new
         @driver = driver
-        @socket = nil
+        @io = nil
         @connection = driver.connection
         @transport = driver.transport
         @connected = false
@@ -92,8 +99,20 @@ module Qpid
                     password : String? = nil, virtual_host : String? = nil,
                     container_id : String? = nil, timeout = DEFAULT_TIMEOUT,
                     sasl_allowed_mechanisms : String? = nil,
-                    allow_insecure_mechanisms = false, &)
-        client = new(host, port, username, password, virtual_host, container_id, sasl_allowed_mechanisms, allow_insecure_mechanisms)
+                    allow_insecure_mechanisms = false, io_factory = nil,
+                    externally_encrypted = false, &)
+        client = new(
+          host,
+          port,
+          username,
+          password,
+          virtual_host,
+          container_id,
+          sasl_allowed_mechanisms,
+          allow_insecure_mechanisms,
+          io_factory,
+          externally_encrypted
+        )
         client.connect(timeout)
         begin
           yield client
@@ -123,10 +142,8 @@ module Qpid
         raise Error.new("Client has been closed") if @freed
 
         connection = @connection || raise Error.new("Client has no connection")
-        socket = TCPSocket.new(@host, @port, nil, timeout)
-        socket.read_timeout = timeout
-        socket.write_timeout = timeout
-        @socket = socket
+        io = open_io(timeout)
+        @io = io
 
         connection.container = @container_id
         connection.hostname = @virtual_host || @host
@@ -251,22 +268,22 @@ module Qpid
         transport = @transport || raise Error.new("Client has no transport")
         sasl = transport.sasl
         sasl.allowed_mechanisms = @sasl_allowed_mechanisms.not_nil! if @sasl_allowed_mechanisms
-        sasl.allow_insecure_mechanisms = @allow_insecure_mechanisms
+        sasl.allow_insecure_mechanisms = @allow_insecure_mechanisms || @externally_encrypted
       end
 
       private def driver : ConnectionDriver
         @driver || raise Error.new("Client has been closed")
       end
 
-      private def socket : TCPSocket
-        @socket || raise Error.new("Client is not connected")
+      private def io : IO
+        @io || raise Error.new("Client is not connected")
       end
 
       private def free_driver : Nil
         return if @freed
 
-        @socket.try &.close rescue nil
-        @socket = nil
+        @io.try &.close rescue nil
+        @io = nil
         @driver.try &.destroy
         @driver = nil
         @connection = nil
@@ -383,9 +400,9 @@ module Qpid
           remaining = deadline - Time.instant
           break if remaining <= Time::Span.zero
 
-          io = socket
-          io.write_timeout = remaining
-          io.write(output)
+          output_io = io
+          set_write_timeout(output_io, remaining)
+          output_io.write(output)
           driver.write_done(output.size)
           progressed = true
         end
@@ -399,13 +416,13 @@ module Qpid
       end
 
       private def read_input(timeout : Time::Span) : Bool
-        io = socket
-        io.read_timeout = timeout
+        input_io = io
+        set_read_timeout(input_io, timeout)
 
         buffer = Lib.pn_connection_driver_read_buffer(driver.raw)
         return false if buffer.size == 0 || buffer.start.null?
 
-        count = io.read(Slice.new(buffer.start, buffer.size.to_i))
+        count = input_io.read(Slice.new(buffer.start, buffer.size.to_i))
 
         if count == 0
           return handle_eof
@@ -445,6 +462,35 @@ module Qpid
           handle_link_remote_open(event)
         when Lib::EventType::Delivery
           handle_delivery(event)
+        end
+      end
+
+      private def wrap_io_factory(io_factory) : IOFactory?
+        io_factory.try do |factory|
+          ->(host : String, port : Int32, timeout : Time::Span) { factory.call(host, port, timeout).as(IO) }
+        end
+      end
+
+      private def open_io(timeout : Time::Span) : IO
+        if factory = @io_factory
+          factory.call(@host, @port, timeout)
+        else
+          TCPSocket.new(@host, @port, nil, timeout).as(IO)
+        end.tap do |opened_io|
+          set_read_timeout(opened_io, timeout)
+          set_write_timeout(opened_io, timeout)
+        end
+      end
+
+      private def set_read_timeout(io : IO, timeout : Time::Span) : Nil
+        if io.responds_to?(:read_timeout=)
+          io.read_timeout = timeout
+        end
+      end
+
+      private def set_write_timeout(io : IO, timeout : Time::Span) : Nil
+        if io.responds_to?(:write_timeout=)
+          io.write_timeout = timeout
         end
       end
 
