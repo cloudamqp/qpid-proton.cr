@@ -1,11 +1,9 @@
-{% unless flag?(:qpid_proton_system) %}
-  require "./lib_vendored_link"
-{% end %}
-
 module Qpid
   module Proton
     {% if flag?(:qpid_proton_system) %}
       @[Link("qpid-proton")]
+    {% else %}
+      @[Link(ldflags: "#{__DIR__}/../../../ext/qpid-proton/build/c/libqpid-proton-core-static.a")]
     {% end %}
     lib Lib
       alias SizeT = LibC::SizeT

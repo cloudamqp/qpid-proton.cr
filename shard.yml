@@ -9,4 +9,21 @@ crystal: ">= 1.20.0"
 license: Apache-2.0
 
 scripts:
-  postinstall: sh ./ext/qpid-proton/build.sh
+  postinstall: |
+    set -e
+    git submodule update --init vendor/qpid-proton
+    cmake -S vendor/qpid-proton -B ext/qpid-proton/build \
+      -DCMAKE_BUILD_TYPE=MinSizeRel \
+      -DCMAKE_INSTALL_PREFIX=ext/qpid-proton/install \
+      -DINCLUDE_INSTALL_DIR=include \
+      -DLIB_INSTALL_DIR=lib \
+      -DBUILD_STATIC_LIBS=ON \
+      -DBUILD_TESTING=OFF \
+      -DBUILD_EXAMPLES=OFF \
+      -DBUILD_TOOLS=OFF \
+      -DBUILD_TLS=OFF \
+      -DBUILD_BINDINGS= \
+      -DPROACTOR=none \
+      -DSSL_IMPL=none \
+      -DSASL_IMPL=none
+    cmake --build ext/qpid-proton/build --target qpid-proton-core-static --parallel

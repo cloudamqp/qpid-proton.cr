@@ -90,12 +90,13 @@ end
 
 ## Examples
 
+After the vendored Proton core has been built by the `postinstall` commands in `shard.yml`:
+
 ```sh
-sh ./ext/qpid-proton/build.sh
 crystal run examples/publish.cr -- examples "hello"
 crystal run examples/consume.cr -- examples
 ```
 
 Set `AMQP_HOST`, `AMQP_PORT`, `AMQP_USERNAME`, `AMQP_PASSWORD`, and `AMQP_ALLOW_INSECURE_MECHS=1` as needed.
 
-If postinstall scripts are skipped, run `sh ./ext/qpid-proton/build.sh` before compiling, or compile with `-Dqpid_proton_system` to link against an installed Proton library.
+If postinstall scripts are skipped, or when developing this shard directly, run the `postinstall` commands from `shard.yml` before compiling. Alternatively, compile with `-Dqpid_proton_system` to link against an installed Proton library.
