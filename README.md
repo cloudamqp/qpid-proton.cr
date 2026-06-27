@@ -46,37 +46,15 @@ message = client.receive("queue-name")
 client.close
 ```
 
-To connect through an externally opened IO, pass `io`. The client closes this IO when the client closes. If you need to set the AMQP hostname, pass `virtual_host`.
-
-```crystal
-socket = TCPSocket.new("localhost", 5672)
-
-client = Qpid::Proton::Client.new(
-  io: socket
-)
-```
-
-TLS support is optional and lives outside Proton:
+TLS support is optional and lives outside Proton. Pass a TLS context to have the client wrap its TCP socket with `OpenSSL::SSL::Socket::Client`:
 
 ```crystal
 require "openssl"
 
-socket = TCPSocket.new("localhost", 5671)
-tls_socket = OpenSSL::SSL::Socket::Client.new(
-  socket,
-  OpenSSL::SSL::Context::Client.new,
-  sync_close: true,
-  hostname: "localhost"
-)
-```
-
-If the IO is already encrypted, set `externally_encrypted: true` so Proton can use SASL mechanisms such as `PLAIN` even though Proton's own transport does not see TLS:
-
-```crystal
 client = Qpid::Proton::Client.new(
-  io: tls_socket,
-  virtual_host: "localhost",
-  externally_encrypted: true
+  "localhost",
+  5671,
+  tls_context: OpenSSL::SSL::Context::Client.new
 )
 ```
 

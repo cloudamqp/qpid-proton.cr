@@ -1,3 +1,4 @@
+require "openssl"
 require "socket"
 
 module Qpid
@@ -59,26 +60,24 @@ module Qpid
       @virtual_host : String?
       @sasl_allowed_mechanisms : String?
       @allow_insecure_mechanisms : Bool
-      @externally_encrypted : Bool
-      @provided_io : Bool
+      @tls_context : OpenSSL::SSL::Context::Client?
       @last_error : Error?
 
       def initialize(@host = "localhost", @port = DEFAULT_PORT, username : String? = nil,
                      password : String? = nil, virtual_host : String? = nil,
                      container_id : String? = nil, sasl_allowed_mechanisms : String? = nil,
-                     allow_insecure_mechanisms = false, io : IO? = nil,
-                     externally_encrypted = false)
+                     allow_insecure_mechanisms = false,
+                     tls_context : OpenSSL::SSL::Context::Client? = nil)
         @username = username
         @password = password
         @virtual_host = virtual_host
         @sasl_allowed_mechanisms = sasl_allowed_mechanisms
         @allow_insecure_mechanisms = allow_insecure_mechanisms
-        @externally_encrypted = externally_encrypted
-        @provided_io = !io.nil?
+        @tls_context = tls_context
         @container_id = container_id || "qpid-proton-cr-#{Process.pid}-#{Time.utc.to_unix_ms}"
         driver = ConnectionDriver.new
         @driver = driver
-        @io = io
+        @io = nil
         @connection = driver.connection
         @transport = driver.transport
         @connected = false
@@ -97,8 +96,8 @@ module Qpid
                     password : String? = nil, virtual_host : String? = nil,
                     container_id : String? = nil, timeout = DEFAULT_TIMEOUT,
                     sasl_allowed_mechanisms : String? = nil,
-                    allow_insecure_mechanisms = false, io : IO? = nil,
-                    externally_encrypted = false, &)
+                    allow_insecure_mechanisms = false,
+                    tls_context : OpenSSL::SSL::Context::Client? = nil, &)
         client = new(
           host,
           port,
@@ -108,8 +107,7 @@ module Qpid
           container_id,
           sasl_allowed_mechanisms,
           allow_insecure_mechanisms,
-          io,
-          externally_encrypted
+          tls_context
         )
         client.connect(timeout)
         begin
@@ -144,9 +142,7 @@ module Qpid
         @io = io
 
         connection.container = @container_id
-        if hostname = @virtual_host || (@provided_io ? nil : @host)
-          connection.hostname = hostname
-        end
+        connection.hostname = @virtual_host || @host
         connection.user = @username.not_nil! if @username
         connection.password = @password.not_nil! if @password
         configure_sasl
@@ -268,7 +264,7 @@ module Qpid
         transport = @transport || raise Error.new("Client has no transport")
         sasl = transport.sasl
         sasl.allowed_mechanisms = @sasl_allowed_mechanisms.not_nil! if @sasl_allowed_mechanisms
-        sasl.allow_insecure_mechanisms = @allow_insecure_mechanisms || @externally_encrypted
+        sasl.allow_insecure_mechanisms = @allow_insecure_mechanisms || !@tls_context.nil?
       end
 
       private def driver : ConnectionDriver
@@ -466,9 +462,27 @@ module Qpid
       end
 
       private def open_io(timeout : Time::Span) : IO
-        (@io || TCPSocket.new(@host, @port, nil, timeout).as(IO)).tap do |opened_io|
-          set_read_timeout(opened_io, timeout)
-          set_write_timeout(opened_io, timeout)
+        socket = TCPSocket.new(@host, @port, nil, timeout)
+        set_read_timeout(socket, timeout)
+        set_write_timeout(socket, timeout)
+
+        if context = @tls_context
+          begin
+            OpenSSL::SSL::Socket::Client.new(
+              socket,
+              context,
+              sync_close: true,
+              hostname: @host
+            ).as(IO).tap do |tls_io|
+              set_read_timeout(tls_io, timeout)
+              set_write_timeout(tls_io, timeout)
+            end
+          rescue ex
+            socket.close rescue nil
+            raise ex
+          end
+        else
+          socket.as(IO)
         end
       end
 

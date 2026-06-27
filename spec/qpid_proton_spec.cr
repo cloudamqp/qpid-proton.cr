@@ -1,4 +1,5 @@
 require "./spec_helper"
+require "openssl"
 
 describe Qpid::Proton do
   it "reports the bound Proton C library version constants" do
@@ -82,17 +83,11 @@ describe Qpid::Proton::Client do
     client.close
   end
 
-  it "type-checks custom IO" do
-    client = Qpid::Proton::Client.new(io: IO::Memory.new)
+  it "type-checks TLS clients" do
+    context = OpenSSL::SSL::Context::Client.new
+    client = Qpid::Proton::Client.new("localhost", 5671, tls_context: context)
 
-    typeof(Qpid::Proton::Client.open(io: IO::Memory.new) { |open_client| open_client.closed? }).should eq(Bool)
-    client.close
-  end
-
-  it "type-checks externally encrypted clients" do
-    client = Qpid::Proton::Client.new(io: IO::Memory.new, externally_encrypted: true)
-
-    typeof(Qpid::Proton::Client.open(io: IO::Memory.new, externally_encrypted: true) { |open_client| open_client.connected? }).should eq(Bool)
+    typeof(Qpid::Proton::Client.open("localhost", 5671, tls_context: context) { |open_client| open_client.connected? }).should eq(Bool)
     client.close
   end
 end
