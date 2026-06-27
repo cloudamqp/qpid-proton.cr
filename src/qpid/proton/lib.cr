@@ -491,9 +491,6 @@ module Qpid
       fun pn_connection_transport(connection : Connection*) : Transport*
       fun pn_connection_wake(connection : Connection*)
       fun pn_connection_write_flush(connection : Connection*)
-      {% if flag?(:qpid_proton_system) %}
-        fun pn_connection_proactor(connection : Connection*) : Proactor*
-      {% end %}
 
       fun pn_session(connection : Connection*) : Session*
       fun pn_session_free(session : Session*)
@@ -741,50 +738,6 @@ module Qpid
       fun pn_sasl_get_allow_insecure_mechs(sasl : Sasl*) : Bool
       fun pn_sasl_config_name(sasl : Sasl*, name : UInt8*)
       fun pn_sasl_config_path(sasl : Sasl*, path : UInt8*)
-
-      {% if flag?(:qpid_proton_system) %}
-        fun pn_listener : Listener*
-        fun pn_listener_free(listener : Listener*)
-        fun pn_listener_accept2(listener : Listener*, connection : Connection*, transport : Transport*)
-        fun pn_listener_accept(listener : Listener*, connection : Connection*)
-        fun pn_listener_condition(listener : Listener*) : Condition*
-        fun pn_listener_get_context(listener : Listener*) : Void*
-        fun pn_listener_set_context(listener : Listener*, context : Void*)
-        fun pn_listener_attachments(listener : Listener*) : Record*
-        fun pn_listener_close(listener : Listener*)
-        fun pn_listener_proactor(listener : Listener*) : Proactor*
-        fun pn_event_listener(event : Event*) : Listener*
-
-        fun pn_proactor_addr(addr : UInt8*, size : SizeT, host : UInt8*, port : UInt8*) : Int32
-        fun pn_proactor : Proactor*
-        fun pn_proactor_free(proactor : Proactor*)
-        fun pn_proactor_connect2(proactor : Proactor*, connection : Connection*, transport : Transport*, addr : UInt8*)
-        fun pn_proactor_connect(proactor : Proactor*, connection : Connection*, addr : UInt8*)
-        fun pn_proactor_listen(proactor : Proactor*, listener : Listener*, addr : UInt8*, backlog : Int32)
-        fun pn_proactor_disconnect(proactor : Proactor*, condition : Condition*)
-        fun pn_proactor_wait(proactor : Proactor*) : EventBatch*
-        fun pn_proactor_get(proactor : Proactor*) : EventBatch*
-        fun pn_event_batch_next(batch : EventBatch*) : Event*
-        fun pn_event_batch_proactor(batch : EventBatch*) : Proactor*
-        fun pn_event_batch_listener(batch : EventBatch*) : Listener*
-        fun pn_event_batch_connection(batch : EventBatch*) : Connection*
-        fun pn_proactor_done(proactor : Proactor*, events : EventBatch*)
-        fun pn_proactor_interrupt(proactor : Proactor*)
-        fun pn_proactor_set_timeout(proactor : Proactor*, timeout : Millis)
-        fun pn_proactor_cancel_timeout(proactor : Proactor*)
-        fun pn_proactor_release_connection(connection : Connection*)
-        fun pn_proactor_now : Millis
-        fun pn_proactor_now_64 : Int64
-
-        fun pn_tls_config(mode : TlsMode) : TlsConfig*
-        fun pn_tls_config_free(domain : TlsConfig*)
-        fun pn_tls_config_set_credentials(domain : TlsConfig*, credential_1 : UInt8*, credential_2 : UInt8*, password : UInt8*) : Int32
-        fun pn_tls_config_set_trusted_certs(domain : TlsConfig*, certificate_db : UInt8*) : Int32
-        fun pn_tls_config_set_peer_authentication(domain : TlsConfig*, mode : TlsVerifyMode, trusted_cas : UInt8*) : Int32
-        fun pn_tls_config_set_impl_ciphers(domain : TlsConfig*, ciphers : UInt8*) : Int32
-        fun pn_tls(domain : TlsConfig*) : Tls*
-        fun pn_tls_start(tls : Tls*) : Int32
-      {% end %}
     end
   end
 end
