@@ -1,11 +1,12 @@
-require "../../src/qpid-proton/tls"
+require "openssl"
+require "../../src/qpid-proton"
 
 context = OpenSSL::SSL::Context::Client.new
-factory = Qpid::Proton::TLS.io_factory(context)
-client = Qpid::Proton::Client.new("localhost", 5671, io_factory: factory, externally_encrypted: true)
+typeof(begin
+  socket = TCPSocket.new("localhost", 5671)
+  tls_socket = OpenSSL::SSL::Socket::Client.new(socket, context, sync_close: true, hostname: "localhost")
 
-typeof(Qpid::Proton::Client.open("localhost", 5671, io_factory: factory, externally_encrypted: true) do |open_client|
-  open_client.connected?
+  Qpid::Proton::Client.open(io: tls_socket, externally_encrypted: true, virtual_host: "localhost") do |open_client|
+    open_client.connected?
+  end
 end)
-
-client.close

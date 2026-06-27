@@ -46,31 +46,36 @@ message = client.receive("queue-name")
 client.close
 ```
 
-To connect through an externally wrapped IO, pass `io_factory`. If the IO is already encrypted, set `externally_encrypted: true` so Proton can use SASL mechanisms such as `PLAIN` even though Proton's own transport does not see TLS:
+To connect through an externally opened IO, pass `io`. The client closes this IO when the client closes. If you need to set the AMQP hostname, pass `virtual_host`.
 
 ```crystal
-factory = ->(host : String, port : Int32, timeout : Time::Span) {
-  socket = TCPSocket.new(host, port, nil, timeout)
-  socket.as(IO)
-}
+socket = TCPSocket.new("localhost", 5672)
 
 client = Qpid::Proton::Client.new(
-  "localhost",
-  5672,
-  io_factory: factory,
-  externally_encrypted: true
+  io: socket
 )
 ```
 
 TLS support is optional and lives outside Proton:
 
 ```crystal
-require "qpid-proton/tls"
+require "openssl"
 
+socket = TCPSocket.new("localhost", 5671)
+tls_socket = OpenSSL::SSL::Socket::Client.new(
+  socket,
+  OpenSSL::SSL::Context::Client.new,
+  sync_close: true,
+  hostname: "localhost"
+)
+```
+
+If the IO is already encrypted, set `externally_encrypted: true` so Proton can use SASL mechanisms such as `PLAIN` even though Proton's own transport does not see TLS:
+
+```crystal
 client = Qpid::Proton::Client.new(
-  "localhost",
-  5671,
-  io_factory: Qpid::Proton::TLS.io_factory,
+  io: tls_socket,
+  virtual_host: "localhost",
   externally_encrypted: true
 )
 ```

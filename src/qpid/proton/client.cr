@@ -42,8 +42,6 @@ module Qpid
     end
 
     class Client < Handle
-      alias IOFactory = String, Int32, Time::Span -> IO
-
       DEFAULT_PORT                    = 5672
       DEFAULT_TIMEOUT                 = 10.seconds
       DEFAULT_SESSION_INCOMING_WINDOW = 1024_u32
@@ -56,31 +54,31 @@ module Qpid
 
       @driver : ConnectionDriver?
       @io : IO?
-      @io_factory : IOFactory?
       @username : String?
       @password : String?
       @virtual_host : String?
       @sasl_allowed_mechanisms : String?
       @allow_insecure_mechanisms : Bool
       @externally_encrypted : Bool
+      @provided_io : Bool
       @last_error : Error?
 
       def initialize(@host = "localhost", @port = DEFAULT_PORT, username : String? = nil,
                      password : String? = nil, virtual_host : String? = nil,
                      container_id : String? = nil, sasl_allowed_mechanisms : String? = nil,
-                     allow_insecure_mechanisms = false, io_factory = nil,
+                     allow_insecure_mechanisms = false, io : IO? = nil,
                      externally_encrypted = false)
         @username = username
         @password = password
         @virtual_host = virtual_host
         @sasl_allowed_mechanisms = sasl_allowed_mechanisms
         @allow_insecure_mechanisms = allow_insecure_mechanisms
-        @io_factory = wrap_io_factory(io_factory)
         @externally_encrypted = externally_encrypted
+        @provided_io = !io.nil?
         @container_id = container_id || "qpid-proton-cr-#{Process.pid}-#{Time.utc.to_unix_ms}"
         driver = ConnectionDriver.new
         @driver = driver
-        @io = nil
+        @io = io
         @connection = driver.connection
         @transport = driver.transport
         @connected = false
@@ -99,7 +97,7 @@ module Qpid
                     password : String? = nil, virtual_host : String? = nil,
                     container_id : String? = nil, timeout = DEFAULT_TIMEOUT,
                     sasl_allowed_mechanisms : String? = nil,
-                    allow_insecure_mechanisms = false, io_factory = nil,
+                    allow_insecure_mechanisms = false, io : IO? = nil,
                     externally_encrypted = false, &)
         client = new(
           host,
@@ -110,7 +108,7 @@ module Qpid
           container_id,
           sasl_allowed_mechanisms,
           allow_insecure_mechanisms,
-          io_factory,
+          io,
           externally_encrypted
         )
         client.connect(timeout)
@@ -146,7 +144,9 @@ module Qpid
         @io = io
 
         connection.container = @container_id
-        connection.hostname = @virtual_host || @host
+        if hostname = @virtual_host || (@provided_io ? nil : @host)
+          connection.hostname = hostname
+        end
         connection.user = @username.not_nil! if @username
         connection.password = @password.not_nil! if @password
         configure_sasl
@@ -465,18 +465,8 @@ module Qpid
         end
       end
 
-      private def wrap_io_factory(io_factory) : IOFactory?
-        io_factory.try do |factory|
-          ->(host : String, port : Int32, timeout : Time::Span) { factory.call(host, port, timeout).as(IO) }
-        end
-      end
-
       private def open_io(timeout : Time::Span) : IO
-        if factory = @io_factory
-          factory.call(@host, @port, timeout)
-        else
-          TCPSocket.new(@host, @port, nil, timeout).as(IO)
-        end.tap do |opened_io|
+        (@io || TCPSocket.new(@host, @port, nil, timeout).as(IO)).tap do |opened_io|
           set_read_timeout(opened_io, timeout)
           set_write_timeout(opened_io, timeout)
         end

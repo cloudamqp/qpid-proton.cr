@@ -82,19 +82,17 @@ describe Qpid::Proton::Client do
     client.close
   end
 
-  it "type-checks custom IO factories" do
-    factory = ->(_host : String, _port : Int32, _timeout : Time::Span) { IO::Memory.new }
-    client = Qpid::Proton::Client.new("localhost", io_factory: factory)
+  it "type-checks custom IO" do
+    client = Qpid::Proton::Client.new(io: IO::Memory.new)
 
-    typeof(Qpid::Proton::Client.open("localhost", io_factory: factory) { |open_client| open_client.closed? }).should eq(Bool)
+    typeof(Qpid::Proton::Client.open(io: IO::Memory.new) { |open_client| open_client.closed? }).should eq(Bool)
     client.close
   end
 
   it "type-checks externally encrypted clients" do
-    factory = ->(_host : String, _port : Int32, _timeout : Time::Span) { IO::Memory.new }
-    client = Qpid::Proton::Client.new("localhost", io_factory: factory, externally_encrypted: true)
+    client = Qpid::Proton::Client.new(io: IO::Memory.new, externally_encrypted: true)
 
-    typeof(Qpid::Proton::Client.open("localhost", io_factory: factory, externally_encrypted: true) { |open_client| open_client.connected? }).should eq(Bool)
+    typeof(Qpid::Proton::Client.open(io: IO::Memory.new, externally_encrypted: true) { |open_client| open_client.connected? }).should eq(Bool)
     client.close
   end
 end
