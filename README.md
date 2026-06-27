@@ -2,8 +2,11 @@
 
 Crystal bindings for the Apache Qpid Proton C library, plus a small blocking client for AMQP 1.0 publish/consume workflows.
 
-The shard links against `libqpid-proton` and expects Proton headers and libraries to be installed on the system.
-The high-level client uses Proton's `pn_connection_driver` over a Crystal `TCPSocket`.
+By default the shard builds and statically links a vendored Apache Qpid Proton C core from `vendor/qpid-proton`.
+The vendored build disables Proton TLS and Cyrus SASL (`SSL_IMPL=none`, `SASL_IMPL=none`) and is intended for the core connection-driver/client workflow.
+Compile with `-Dqpid_proton_system` to use the system `libqpid-proton` instead.
+
+The high-level client uses Proton's `pn_connection_driver` over a Crystal `IO`.
 
 ```crystal
 require "qpid-proton"
@@ -43,6 +46,18 @@ message = client.receive("queue-name")
 client.close
 ```
 
+TLS support is optional and lives outside Proton. Pass a TLS context to have the client wrap its TCP socket with `OpenSSL::SSL::Socket::Client`:
+
+```crystal
+require "openssl"
+
+client = Qpid::Proton::Client.new(
+  "localhost",
+  5671,
+  tls_context: OpenSSL::SSL::Context::Client.new
+)
+```
+
 For manual delivery settlement:
 
 ```crystal
@@ -58,9 +73,13 @@ end
 
 ## Examples
 
+After the vendored Proton core has been built by the `postinstall` commands in `shard.yml`:
+
 ```sh
 crystal run examples/publish.cr -- examples "hello"
 crystal run examples/consume.cr -- examples
 ```
 
 Set `AMQP_HOST`, `AMQP_PORT`, `AMQP_USERNAME`, `AMQP_PASSWORD`, and `AMQP_ALLOW_INSECURE_MECHS=1` as needed.
+
+If postinstall scripts are skipped, or when developing this shard directly, run the `postinstall` commands from `shard.yml` before compiling. Alternatively, compile with `-Dqpid_proton_system` to link against an installed Proton library.
